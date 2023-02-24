@@ -3,6 +3,14 @@ name = "goodreads-graphql"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+doctest = true
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "goodreads-graphql"
+
 [dependencies]
 anyhow = "1.0.69"
 

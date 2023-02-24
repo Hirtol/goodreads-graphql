@@ -12,11 +12,13 @@ use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
 pub fn goodreads_sdk_config() -> SdkConfig {
+    let default_region = Region::new("us-east-1");
+    
     SdkConfig::builder()
-        .region(Region::new("us-east-1"))
+        .region(default_region.clone())
         .sleep_impl(Arc::new(aws_smithy_async::rt::sleep::TokioSleep::new()))
         .credentials_cache(CredentialsCache::lazy())
-        .credentials_provider(SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new()))
+        .credentials_provider(SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(default_region)))
         .build()
 }
 
@@ -36,6 +38,11 @@ impl GoodreadsClient {
     ///
     /// Use the [Default] implementation for sensible defaults instead of having to provide a custom [SdkConfig]
     pub fn new(custom_config: &SdkConfig, goodreads_api_endpoint: &str) -> Result<Self, anyhow::Error> {
+        let region = custom_config
+            .region()
+            .cloned()
+            .unwrap_or_else(|| Region::new("us-east-1"));
+        
         let initial_cache = custom_config
             .credentials_cache()
             .cloned()
@@ -44,14 +51,11 @@ impl GoodreadsClient {
         let shared_provider = custom_config
             .credentials_provider()
             .cloned()
-            .unwrap_or_else(|| SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new()));
+            .unwrap_or_else(|| SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(region.clone())));
 
         let config = GoodreadsConfig {
             credentials_cache: initial_cache.create_cache(shared_provider),
-            region: custom_config
-                .region()
-                .cloned()
-                .unwrap_or_else(|| Region::new("us-east-1")),
+            region,
             api_endpoint: goodreads_api_endpoint.try_into()?,
         };
 
@@ -91,7 +95,7 @@ impl GoodreadsClient {
     ///
     /// # Returns
     ///
-    /// The provided `T` if the request was succesfull (aka, endpoint returned 200).
+    /// The provided `T` if the request was successful (aka, endpoint returned 200).
     /// Note that this means this `T` should expect a top level `data` and/or `error` node, as GraphQL errors are not handled
     /// in this method.
     #[tracing::instrument(skip(self))]

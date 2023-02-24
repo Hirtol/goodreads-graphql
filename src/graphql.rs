@@ -1,7 +1,7 @@
 use serde_json::Map;
 use std::borrow::Cow;
 
-#[derive(serde::Serialize, Debug)]
+#[derive(serde::Serialize, Debug, Clone)]
 pub struct GraphQLCustomRequest<'a> {
     #[serde(rename = "operationName")]
     pub(crate) operation_name: Cow<'a, str>,

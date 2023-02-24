@@ -14,9 +14,9 @@ impl GoodreadsCredentialsProvider {
     /// Create the credentials provider used to configure a [SdkConfig](aws_config::SdkConfig).
     ///
     /// It will acquire an anonymous identity id and subsequent credentials.
-    pub fn new() -> GoodreadsCredentialsProvider {
+    pub fn new(region: Region) -> GoodreadsCredentialsProvider {
         let config = aws_config::SdkConfig::builder()
-            .region(Region::new("us-east-1"))
+            .region(region)
             .build();
 
         GoodreadsCredentialsProvider {
