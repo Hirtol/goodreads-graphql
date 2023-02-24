@@ -21,12 +21,8 @@ impl<S> tower::Layer<S> for GoodreadsMiddleware {
     fn layer(&self, inner: S) -> Self::Service {
         tower::ServiceBuilder::new()
             .layer(AsyncMapRequestLayer::for_mapper(CredentialsStage::new()))
-            .layer(MapRequestLayer::for_mapper(
-                GoodreadsSigningService::default(),
-            ))
-            .layer(MapRequestLayer::for_mapper(SigV4SigningStage::new(
-                SigV4Signer::new(),
-            )))
+            .layer(MapRequestLayer::for_mapper(GoodreadsSigningService::default()))
+            .layer(MapRequestLayer::for_mapper(SigV4SigningStage::new(SigV4Signer::new())))
             .service(inner)
     }
 }
@@ -45,9 +41,7 @@ impl MapRequest for GoodreadsSigningService {
         request
             .properties_mut()
             .insert(SigningRegion::from(Region::new("us-east-1")));
-        request
-            .properties_mut()
-            .insert(SigningService::from_static("appsync"));
+        request.properties_mut().insert(SigningService::from_static("appsync"));
         request
             .properties_mut()
             .insert(OperationSigningConfig::default_config());

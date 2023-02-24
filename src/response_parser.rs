@@ -41,9 +41,7 @@ impl<T> Clone for SerdeResponseParser<T> {
     }
 }
 
-impl<T: DeserializeOwned> aws_smithy_http::response::ParseStrictResponse
-    for SerdeResponseParser<T>
-{
+impl<T: DeserializeOwned> aws_smithy_http::response::ParseStrictResponse for SerdeResponseParser<T> {
     type Output = Result<T, SerdeResponseError>;
 
     fn parse(&self, response: &Response<Bytes>) -> Self::Output {

@@ -26,9 +26,7 @@ impl GoodreadsCredentialsProvider {
 }
 
 impl ProvideCredentials for GoodreadsCredentialsProvider {
-    fn provide_credentials<'a>(
-        &'a self,
-    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+    fn provide_credentials<'a>(&'a self) -> aws_credential_types::provider::future::ProvideCredentials<'a>
     where
         Self: 'a,
     {
@@ -41,20 +39,19 @@ impl ProvideCredentials for GoodreadsCredentialsProvider {
                 .await
                 .map_err(CredentialsError::provider_error)?;
 
-            tracing::debug!(
-                ?response,
-                "Retrieved ID for GoodReads anonymous credentials"
-            );
+            tracing::debug!(?response, "Retrieved ID for GoodReads anonymous credentials");
 
-            let cred_result =
-                self.client
-                    .get_credentials_for_identity()
-                    .identity_id(response.identity_id().ok_or_else(|| {
-                        CredentialsError::not_loaded("No identity ID was provided")
-                    })?)
-                    .send()
-                    .await
-                    .map_err(CredentialsError::provider_error)?;
+            let cred_result = self
+                .client
+                .get_credentials_for_identity()
+                .identity_id(
+                    response
+                        .identity_id()
+                        .ok_or_else(|| CredentialsError::not_loaded("No identity ID was provided"))?,
+                )
+                .send()
+                .await
+                .map_err(CredentialsError::provider_error)?;
 
             let credentials_model = cred_result
                 .credentials()
