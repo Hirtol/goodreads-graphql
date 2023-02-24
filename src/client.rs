@@ -13,12 +13,14 @@ use std::sync::Arc;
 
 pub fn goodreads_sdk_config() -> SdkConfig {
     let default_region = Region::new("us-east-1");
-    
+
     SdkConfig::builder()
         .region(default_region.clone())
         .sleep_impl(Arc::new(aws_smithy_async::rt::sleep::TokioSleep::new()))
         .credentials_cache(CredentialsCache::lazy())
-        .credentials_provider(SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(default_region)))
+        .credentials_provider(SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(
+            default_region,
+        )))
         .build()
 }
 
@@ -29,7 +31,6 @@ pub struct GoodreadsClient {
 
 pub struct GoodreadsConfig {
     credentials_cache: SharedCredentialsCache,
-    region: Region,
     api_endpoint: http::Uri,
 }
 
@@ -42,7 +43,7 @@ impl GoodreadsClient {
             .region()
             .cloned()
             .unwrap_or_else(|| Region::new("us-east-1"));
-        
+
         let initial_cache = custom_config
             .credentials_cache()
             .cloned()
@@ -55,7 +56,6 @@ impl GoodreadsClient {
 
         let config = GoodreadsConfig {
             credentials_cache: initial_cache.create_cache(shared_provider),
-            region,
             api_endpoint: goodreads_api_endpoint.try_into()?,
         };
 
@@ -147,7 +147,6 @@ impl Default for GoodreadsClient {
 static INTROSPECTION_QUERY: &str = r#"
     query IntrospectionQuery {
       __schema {
-        
         queryType { name }
         mutationType { name }
         subscriptionType { name }
@@ -170,7 +169,6 @@ static INTROSPECTION_QUERY: &str = r#"
       kind
       name
       description
-      
       fields(includeDeprecated: true) {
         name
         description
@@ -205,8 +203,6 @@ static INTROSPECTION_QUERY: &str = r#"
       description
       type { ...TypeRef }
       defaultValue
-      
-      
     }
 
     fragment TypeRef on __Type {

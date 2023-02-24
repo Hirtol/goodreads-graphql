@@ -15,9 +15,7 @@ impl GoodreadsCredentialsProvider {
     ///
     /// It will acquire an anonymous identity id and subsequent credentials.
     pub fn new(region: Region) -> GoodreadsCredentialsProvider {
-        let config = aws_config::SdkConfig::builder()
-            .region(region)
-            .build();
+        let config = aws_config::SdkConfig::builder().region(region).build();
 
         GoodreadsCredentialsProvider {
             client: aws_sdk_cognitoidentity::Client::new(&config),
