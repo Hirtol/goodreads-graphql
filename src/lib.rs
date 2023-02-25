@@ -1,6 +1,6 @@
 pub mod client;
 pub mod graphql;
-mod identity;
+pub mod identity;
 mod middleware;
 pub mod response_parser;
 

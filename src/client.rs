@@ -113,18 +113,32 @@ impl GoodreadsClient {
         self.send_body(body).await
     }
 
+    /// The primary method one would use to send a GraphQL query constructed by an external query builder such as [cynic](https://github.com/obmarg/cynic).
+    ///
+    /// # Returns
+    ///
+    /// The provided `T` if the request was successful (aka, endpoint returned 200).
+    /// Note that this means this `T` should expect a top level `data` and/or `error` node, as GraphQL errors are not handled
+    /// in this method.
     #[tracing::instrument(skip(self, query))]
     pub async fn send_body<T>(&self, query: SdkBody) -> Result<T>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
-        let request = http::Request::post(&self.config.api_endpoint)
+        let request = http::Request::builder()
+            .uri(&self.config.api_endpoint)
+            .method(http::Method::POST)
+            .header(http::header::CONTENT_TYPE, "application/x-amz-json-1.1")
             .body(query)
             .map_err(SdkError::construction_failure)?;
 
         self.send_request(request).await
     }
 
+    /// The lowest level method to send a request to the Goodreads API.
+    ///
+    /// Note that the caller is responsible for constructing the request properly.
+    /// For most use-cases [send_body](GoodreadsClient::send_body) is preferable.
     #[tracing::instrument(skip(self))]
     pub async fn send_request<T>(&self, request: http::Request<SdkBody>) -> Result<T>
     where
