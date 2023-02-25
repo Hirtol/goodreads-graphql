@@ -31,7 +31,7 @@ impl<S> tower::Layer<S> for GoodreadsMiddleware {
 pub struct GoodreadsSigningService;
 
 impl MapRequest for GoodreadsSigningService {
-    type Error = anyhow::Error;
+    type Error = std::convert::Infallible;
 
     fn name(&self) -> &'static str {
         "goodreads_signing_information"
