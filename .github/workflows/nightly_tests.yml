@@ -1,0 +1,47 @@
+name: Nightly Tests
+on:
+  schedule:
+    - cron: 0 0 * * *
+  workflow_dispatch:
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CI: 1
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      API_LIVE_TESTING: ()
+    steps:
+      - uses: actions/checkout@master
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Latest Nextest Release
+        shell: bash
+        run: |
+          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin          
+
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --no-run
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: nextest
+          args: run --workspace
+
+      - name: Clear the cargo cache
+        run: |
+          cargo install cargo-cache --no-default-features --features ci-autoclean
+          cargo-cache
