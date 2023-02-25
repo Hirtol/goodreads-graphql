@@ -1,15 +1,18 @@
 use crate::graphql::GraphQLCustomRequest;
 use crate::identity::GoodreadsCredentialsProvider;
 use crate::middleware::GoodreadsMiddleware;
-use crate::response_parser::SerdeResponseParser;
+use crate::response_parser::{SerdeResponseError, SerdeResponseParser};
 use aws_credential_types::cache::{CredentialsCache, SharedCredentialsCache};
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_smithy_client::erase::DynConnector;
 use aws_smithy_http::body::SdkBody;
+use aws_smithy_http::result::SdkError;
 use aws_types::region::Region;
 use aws_types::SdkConfig;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+
+pub type Result<T> = std::result::Result<T, SdkError<SerdeResponseError>>;
 
 pub fn goodreads_sdk_config() -> SdkConfig {
     let default_region = Region::new("us-east-1");
@@ -38,7 +41,7 @@ impl GoodreadsClient {
     /// Create a new [GoodreadsClient].
     ///
     /// Use the [Default] implementation for sensible defaults instead of having to provide a custom [SdkConfig]
-    pub fn new(custom_config: &SdkConfig, goodreads_api_endpoint: &str) -> Result<Self, anyhow::Error> {
+    pub fn new(custom_config: &SdkConfig, goodreads_api_endpoint: &str) -> Result<Self> {
         let region = custom_config
             .region()
             .cloned()
@@ -56,7 +59,9 @@ impl GoodreadsClient {
 
         let config = GoodreadsConfig {
             credentials_cache: initial_cache.create_cache(shared_provider),
-            api_endpoint: goodreads_api_endpoint.try_into()?,
+            api_endpoint: goodreads_api_endpoint
+                .try_into()
+                .map_err(SdkError::construction_failure)?,
         };
 
         let client = aws_smithy_client::Builder::new()
@@ -83,7 +88,7 @@ impl GoodreadsClient {
     ///
     /// The full Goodreads schema as a [Value](serde_json::Value).
     #[tracing::instrument(skip(self))]
-    pub async fn introspection(&self) -> Result<serde_json::Value, anyhow::Error> {
+    pub async fn introspection(&self) -> Result<serde_json::Value> {
         let request = GraphQLCustomRequest::from_query(INTROSPECTION_QUERY, "IntrospectionQuery");
 
         self.send_graphql_query(request).await
@@ -99,27 +104,29 @@ impl GoodreadsClient {
     /// Note that this means this `T` should expect a top level `data` and/or `error` node, as GraphQL errors are not handled
     /// in this method.
     #[tracing::instrument(skip(self))]
-    pub async fn send_graphql_query<T>(&self, query: GraphQLCustomRequest<'_>) -> Result<T, anyhow::Error>
+    pub async fn send_graphql_query<T>(&self, query: GraphQLCustomRequest<'_>) -> Result<T>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
-        let body = SdkBody::from(serde_json::to_string(&query)?);
+        let body = SdkBody::from(serde_json::to_string(&query).map_err(SdkError::construction_failure)?);
 
         self.send_body(body).await
     }
 
     #[tracing::instrument(skip(self, query))]
-    pub async fn send_body<T>(&self, query: SdkBody) -> Result<T, anyhow::Error>
+    pub async fn send_body<T>(&self, query: SdkBody) -> Result<T>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
-        let request = http::Request::post(&self.config.api_endpoint).body(query)?;
+        let request = http::Request::post(&self.config.api_endpoint)
+            .body(query)
+            .map_err(SdkError::construction_failure)?;
 
         self.send_request(request).await
     }
 
     #[tracing::instrument(skip(self))]
-    pub async fn send_request<T>(&self, request: http::Request<SdkBody>) -> Result<T, anyhow::Error>
+    pub async fn send_request<T>(&self, request: http::Request<SdkBody>) -> Result<T>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
@@ -130,7 +137,7 @@ impl GoodreadsClient {
 
         let op = aws_smithy_http::operation::Operation::new(final_request, SerdeResponseParser::default());
 
-        Ok(self.aws_client.call(op).await?)
+        self.aws_client.call(op).await
     }
 }
 
