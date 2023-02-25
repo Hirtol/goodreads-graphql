@@ -1,31 +1,19 @@
 use crate::graphql::GraphQLCustomRequest;
 use crate::identity::GoodreadsCredentialsProvider;
+use crate::identity_cache::GoodreadsCredentialsCache;
 use crate::middleware::GoodreadsMiddleware;
 use crate::response_parser::{SerdeResponseError, SerdeResponseParser};
-use aws_credential_types::cache::{CredentialsCache, SharedCredentialsCache};
+use aws_credential_types::cache::{ProvideCachedCredentials, SharedCredentialsCache};
 use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_credential_types::Credentials;
 use aws_smithy_client::erase::DynConnector;
 use aws_smithy_http::body::SdkBody;
 use aws_smithy_http::result::SdkError;
 use aws_types::region::Region;
-use aws_types::SdkConfig;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, SdkError<SerdeResponseError>>;
-
-pub fn goodreads_sdk_config() -> SdkConfig {
-    let default_region = Region::new("us-east-1");
-
-    SdkConfig::builder()
-        .region(default_region.clone())
-        .sleep_impl(Arc::new(aws_smithy_async::rt::sleep::TokioSleep::new()))
-        .credentials_cache(CredentialsCache::lazy())
-        .credentials_provider(SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(
-            default_region,
-        )))
-        .build()
-}
 
 pub struct GoodreadsClient {
     aws_client: aws_smithy_client::Client<DynConnector, GoodreadsMiddleware>,
@@ -34,51 +22,20 @@ pub struct GoodreadsClient {
 
 pub struct GoodreadsConfig {
     credentials_cache: SharedCredentialsCache,
+    cache: Arc<GoodreadsCredentialsCache>,
     api_endpoint: http::Uri,
 }
 
 impl GoodreadsClient {
     /// Create a new [GoodreadsClient].
     ///
-    /// Use the [Default] implementation for sensible defaults instead of having to provide a custom [SdkConfig]
-    pub fn new(custom_config: &SdkConfig, goodreads_api_endpoint: &str) -> Result<Self> {
-        let region = custom_config
-            .region()
-            .cloned()
-            .unwrap_or_else(|| Region::new("us-east-1"));
+    /// Use the [Default] implementation for sensible defaults.
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::new()
+    }
 
-        let initial_cache = custom_config
-            .credentials_cache()
-            .cloned()
-            .unwrap_or_else(CredentialsCache::lazy);
-
-        let shared_provider = custom_config
-            .credentials_provider()
-            .cloned()
-            .unwrap_or_else(|| SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(region.clone())));
-
-        let config = GoodreadsConfig {
-            credentials_cache: initial_cache.create_cache(shared_provider),
-            api_endpoint: goodreads_api_endpoint
-                .try_into()
-                .map_err(SdkError::construction_failure)?,
-        };
-
-        let client = aws_smithy_client::Builder::new()
-            .rustls_connector(Default::default())
-            .middleware(GoodreadsMiddleware::default())
-            .sleep_impl(
-                custom_config
-                    .sleep_impl()
-                    .or_else(aws_smithy_async::rt::sleep::default_async_sleep)
-                    .expect("No sleep runtime available"),
-            )
-            .build();
-
-        Ok(Self {
-            aws_client: client,
-            config,
-        })
+    pub fn stored_credentials(&self) -> Option<Credentials> {
+        self.config.cache.stored_credentials()
     }
 
     /// At the moment Goodreads has their introspection turned on, convenient for us as it allows us to cheaply
@@ -157,11 +114,82 @@ impl GoodreadsClient {
 
 impl Default for GoodreadsClient {
     fn default() -> Self {
-        Self::new(
-            &goodreads_sdk_config(),
-            "https://kxbwmqov6jgg3daaamb744ycu4.appsync-api.us-east-1.amazonaws.com/graphql",
-        )
-        .expect("Default Goodreads config is no longer valid?")
+        Self::builder()
+            .build()
+            .expect("Default Goodreads config is no longer valid?")
+    }
+}
+
+#[derive(Default)]
+pub struct ClientBuilder {
+    region: Option<Region>,
+    api_endpoint: Option<String>,
+    saved_credentials: Option<Credentials>,
+}
+
+impl ClientBuilder {
+    pub fn new() -> ClientBuilder {
+        Self::default()
+    }
+
+    pub fn build(self) -> Result<GoodreadsClient> {
+        let region = self.region.unwrap_or_else(|| Region::new("us-east-1"));
+
+        let shared_provider = SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(region));
+
+        let caches = Arc::new(GoodreadsCredentialsCache::new(shared_provider, self.saved_credentials));
+
+        let config = GoodreadsConfig {
+            credentials_cache: SharedCredentialsCache::from(caches.clone() as Arc<dyn ProvideCachedCredentials>),
+            cache: caches,
+            api_endpoint: self
+                .api_endpoint
+                .as_deref()
+                .unwrap_or("https://kxbwmqov6jgg3daaamb744ycu4.appsync-api.us-east-1.amazonaws.com/graphql")
+                .try_into()
+                .map_err(SdkError::construction_failure)?,
+        };
+
+        let client = aws_smithy_client::Builder::new()
+            .rustls_connector(Default::default())
+            .middleware(GoodreadsMiddleware::default())
+            .sleep_impl(aws_smithy_async::rt::sleep::default_async_sleep().expect("No sleep runtime available"))
+            .build();
+
+        Ok(GoodreadsClient {
+            aws_client: client,
+            config,
+        })
+    }
+
+    pub fn region(mut self, region: impl Into<Option<Region>>) -> Self {
+        self.set_region(region);
+        self
+    }
+
+    pub fn set_region(&mut self, region: impl Into<Option<Region>>) -> &mut Self {
+        self.region = region.into();
+        self
+    }
+
+    pub fn api_endpoint(mut self, url: impl Into<Option<String>>) -> Self {
+        self.set_api_endpoint(url);
+        self
+    }
+
+    pub fn set_api_endpoint(&mut self, url: impl Into<Option<String>>) -> &mut Self {
+        self.api_endpoint = url.into();
+        self
+    }
+
+    pub fn credentials(mut self, creds: Option<Credentials>) -> Self {
+        self.set_credentials(creds);
+        self
+    }
+
+    pub fn set_credentials(&mut self, creds: Option<Credentials>) -> &mut Self {
+        self.saved_credentials = creds;
+        self
     }
 }
 

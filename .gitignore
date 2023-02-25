@@ -2,3 +2,4 @@
 .idea
 .idea/*
 Cargo.lock
+tests/resources

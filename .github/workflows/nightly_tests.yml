@@ -28,6 +28,9 @@ jobs:
 
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          # Note that this is only safe so long as we *only* test anonymous credentials.
+          cache-directories: "tests/resources/"
 
       - name: Compile
         uses: actions-rs/cargo@v1
