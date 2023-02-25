@@ -37,7 +37,7 @@ impl ProvideCredentials for GoodreadsCredentialsProvider {
                 .await
                 .map_err(CredentialsError::provider_error)?;
 
-            tracing::debug!(?response, "Retrieved ID for GoodReads anonymous credentials");
+            tracing::debug!(?response, "Retrieved ID for Goodreads anonymous credentials");
 
             let cred_result = self
                 .client
