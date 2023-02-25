@@ -34,6 +34,12 @@ impl GoodreadsClient {
         ClientBuilder::new()
     }
 
+    /// Returns the [Credentials] used by this client (only if they were initialised, e.g. a request was sent).
+    ///
+    /// This can be useful for persisting credentials in situations like tests or during development.
+    /// The credentials usually last for an hour, and one can quickly get API banned if you request more credentials during this hour!
+    ///
+    /// The credentials can be given to the [ClientBuilder]. This client will automatically renew credentials when they expire during operation.
     pub fn stored_credentials(&self) -> Option<Credentials> {
         self.config.cache.stored_credentials()
     }

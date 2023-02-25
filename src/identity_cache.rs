@@ -8,6 +8,7 @@ use std::time::SystemTime;
 #[derive(Debug)]
 pub struct GoodreadsCredentialsCache {
     internal: SharedCredentialsCache,
+    // Unfortunately necessary to allow for sync access to the credentials. The Lazy cache is only async.
     stored: Arc<RwLock<Option<Credentials>>>,
 }
 
