@@ -1,5 +1,5 @@
 use aws_credential_types::provider::error::CredentialsError;
-use aws_credential_types::provider::ProvideCredentials;
+pub use aws_credential_types::provider::ProvideCredentials;
 use aws_types::region::Region;
 use std::time::SystemTime;
 
