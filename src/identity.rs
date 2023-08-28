@@ -55,7 +55,7 @@ impl ProvideCredentials for GoodreadsCredentialsProvider {
                 .credentials()
                 .ok_or_else(|| CredentialsError::not_loaded("No credentials were returned"))?;
 
-            let final_credentials = aws_sdk_cognitoidentity::Credentials::new(
+            let final_credentials = aws_sdk_cognitoidentity::config::Credentials::new(
                 credentials_model
                     .access_key_id()
                     .ok_or_else(|| CredentialsError::not_loaded("No access key id was returned"))?,

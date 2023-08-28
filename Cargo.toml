@@ -10,19 +10,19 @@ doctest = true
 tracing = "0.1.37"
 thiserror = "1.0.38"
 
-aws-config = "0.54.1"
-aws-types = "0.54.1"
-aws-credential-types = "0.54.1"
+aws-config = "0.56"
+aws-types = "0.56"
+aws-credential-types = "0.56"
 
-aws-sdk-cognitoidentity = "0.24.0"
-aws-sig-auth = "0.54.1"
+aws-sdk-cognitoidentity = "0.29.0"
+aws-sig-auth = "0.56"
 
-aws-smithy-async = { version = "0.54.4", features = ["rt-tokio"] }
-aws-smithy-client = { version = "0.54.3", features = ["rustls", "hyper-rustls", "hyper", "serde"] }
+aws-smithy-async = { version = "0.56", features = ["rt-tokio"] }
+aws-smithy-client = { version = "0.56", features = ["rustls", "client-hyper"] }
 
-aws-http = "0.54.1"
-aws-smithy-http = "0.54.3"
-aws-smithy-http-tower = "0.54.4"
+aws-http = "0.56"
+aws-smithy-http = "0.56"
+aws-smithy-http-tower = "0.56"
 
 http = "0.2.9"
 hyper = "0.14.24"
