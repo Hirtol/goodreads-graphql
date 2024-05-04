@@ -2,6 +2,24 @@
 directive @defer on FIELD
 
 """
+Tells the service this field/object has access authorized by a Cognito User Pools token.
+"""
+directive @aws_cognito_user_pools(
+  """List of cognito user pool groups which have access on this field"""
+  cognito_groups: [String]
+) on OBJECT | FIELD_DEFINITION
+
+"""
+Tells the service this field/object has access authorized by an OIDC token.
+"""
+directive @aws_oidc on OBJECT | FIELD_DEFINITION
+
+"""
+Tells the service this field/object has access authorized by a Lambda Authorizer.
+"""
+directive @aws_lambda on OBJECT | FIELD_DEFINITION
+
+"""
 Tells the service which subscriptions will be published to when this mutation is
 called. This directive is deprecated use @aws_susbscribe directive instead.
 """
@@ -13,38 +31,15 @@ directive @aws_publish(
 ) on FIELD_DEFINITION
 
 """
-Tells the service this field/object has access authorized by an OIDC token.
+Tells the service this field/object has access authorized by sigv4 signing.
 """
-directive @aws_oidc on OBJECT | FIELD_DEFINITION
-
-"""
-Tells the service this field/object has access authorized by a Cognito User Pools token.
-"""
-directive @aws_cognito_user_pools(
-  """List of cognito user pool groups which have access on this field"""
-  cognito_groups: [String]
-) on OBJECT | FIELD_DEFINITION
+directive @aws_iam on OBJECT | FIELD_DEFINITION
 
 """Directs the schema to enforce authorization on a field"""
 directive @aws_auth(
   """List of cognito user pool groups which have access on this field"""
   cognito_groups: [String]
 ) on FIELD_DEFINITION
-
-"""
-Tells the service this field/object has access authorized by an API key.
-"""
-directive @aws_api_key on OBJECT | FIELD_DEFINITION
-
-"""
-Tells the service this field/object has access authorized by sigv4 signing.
-"""
-directive @aws_iam on OBJECT | FIELD_DEFINITION
-
-"""
-Tells the service this field/object has access authorized by a Lambda Authorizer.
-"""
-directive @aws_lambda on OBJECT | FIELD_DEFINITION
 
 """Tells the service which mutation triggers this subscription."""
 directive @aws_subscribe(
@@ -53,6 +48,11 @@ directive @aws_subscribe(
   """
   mutations: [String]
 ) on FIELD_DEFINITION
+
+"""
+Tells the service this field/object has access authorized by an API key.
+"""
+directive @aws_api_key on OBJECT | FIELD_DEFINITION
 
 type AdsTargeting {
   behavioral: BehavioralTargeting
@@ -79,7 +79,6 @@ type Award {
   awardedAt: Float
   category: String
   designation: AwardDesignation
-  hasWon: Boolean @deprecated(reason: "Use designation instead.")
   name: String
   webUrl: String
 }
@@ -198,6 +197,7 @@ type BookLinks {
   overflowPageUrl: String!
   primaryAffiliateLink: Link
   secondaryAffiliateLinks: [BookLink!]!
+  seriesLink: SeriesLink
 }
 
 type BookList implements Node {
@@ -242,6 +242,17 @@ type BookOrWorkStats {
   ratingsSum: Int
   textReviewsCount: Int
   textReviewsLanguageCounts: [TextReviewLanguageCount]
+}
+
+type BookPageSponsoredProductAds {
+  creativeHtmlString: String
+  impressionUrl: String
+}
+
+input BookPageSponsoredProductAdsInput {
+  asin: String!
+  deviceType: DeviceType!
+  sessionId: String!
 }
 
 type BookReviewsConnection implements Connection {
@@ -295,6 +306,41 @@ type Character {
   webUrl: String
 }
 
+type ChoiceAwardsArticleLink {
+  source: String!
+  title: String!
+  url: String!
+}
+
+type ChoiceAwardsCategory {
+  books: [ChoiceAwardsCategoryBook]
+  name: String!
+  url: String!
+}
+
+type ChoiceAwardsCategoryBook {
+  book: Book
+}
+
+type ChoiceAwardsInstance {
+  bestOfListLinks: [ChoiceAwardsArticleLink]
+  categories: [ChoiceAwardsCategory]
+  choiceChatterLinks: [ChoiceAwardsArticleLink]
+  shelvedNominees: [ChoiceAwardsCategory]
+  stageName: ChoiceAwardsStageName
+  totalVoteCount: Int
+  year: Int!
+}
+
+enum ChoiceAwardsStageName {
+  BETWEEN_0_1
+  BETWEEN_1_2
+  ROUND_1
+  ROUND_2
+  VOTING_CLOSED
+  WINNERS_ANNOUNCED
+}
+
 type Comment implements Node {
   createdAt: String
   creator: User
@@ -310,6 +356,12 @@ interface Commentable {
 
 input CommentFiltersInput {
   resourceId: ID!
+  sort: CommentsSortOption
+}
+
+enum CommentsSortOption {
+  NEWEST
+  OLDEST
 }
 
 type CommunityRatingsConnection implements Connection {
@@ -409,12 +461,30 @@ type DeleteCommentPayload {
   isSuccessful: Boolean!
 }
 
+enum DeviceType {
+  DESKTOP
+  MOBILE
+}
+
 input DiscussionInput {
   workId: ID!
 }
 
 interface Edge {
   node: Node!
+}
+
+input EvictCacheEntryInput {
+  cachingKeys: String!
+  fieldName: String!
+  typeName: String!
+}
+
+type FeaturedArticle {
+  genres: [String!]!
+  imageUrl: String!
+  title: String!
+  webUrl: String!
 }
 
 type FeaturedItemsConnection {
@@ -449,6 +519,7 @@ type FeatureFlags {
   noIndex: Boolean
   noNewRatings: Boolean
   noNewTextReviews: Boolean
+  noReviews: Boolean
 }
 
 type FlexAd implements NativeAd {
@@ -773,6 +844,7 @@ type Mutation {
   createComment(input: CreateCommentInput): CreateCommentPayload
   createFlagging(input: CreateFlaggingInput!): CreateFlaggingPayload
   deleteComment(input: DeleteCommentInput): DeleteCommentPayload
+  evictCacheEntry(input: EvictCacheEntryInput!): String
   followContributor(input: FollowContributorInput!): FollowContributorPayload
   followUser(input: FollowUserInput!): FollowUserPayload
   friendUser(input: FriendUserInput!): FriendUserPayload
@@ -886,8 +958,11 @@ type Query {
   getBook(id: ID!): Book
   getBookByLegacyId(legacyId: Int!): Book
   getBookListsOfBook(id: ID!, paginationInput: PaginationInput): BookListsConnection!
+  getBookPageSponsoredProductAds(input: BookPageSponsoredProductAdsInput!): BookPageSponsoredProductAds
+  getChoiceAwardsInstance(stageName: ChoiceAwardsStageName, year: Int!): ChoiceAwardsInstance
   getComments(filters: CommentFiltersInput!, pagination: PaginationInput): ResourceCommentsConnection
   getEditions(id: ID!, pagination: PaginationInput): BooksConnection
+  getFeaturedArticlesByWork(id: ID!): [FeaturedArticle]
   getFeaturedItems(limit: Int): FeaturedItemsConnection
   getFeaturedKNH(input: FeaturedKNHInput!): FeaturedKNHCollectionConnection
   getGiveawayByLegacyId(legacyId: ID!): LegacyGiveaway
@@ -897,6 +972,7 @@ type Query {
   getNativeAd(id: ID!): NativeAd
   getPageBanner(getPageBannerInput: GetPageBannerInput!): PageBanner
   getRelatedTags(tagName: String!): RelatedTagsList
+  getReview(id: ID!): Review
   getReviews(filters: BookReviewsFilterInput!, pagination: PaginationInput): BookReviewsConnection
   getSchemaHealth: SchemaHealth
   getSearchSuggestions(query: String!): SearchResultsConnection
@@ -1035,7 +1111,7 @@ type SchemaHealth {
   monolithDataSource: DataSourceHealth
   nativeAdsServiceDataSource: DataSourceHealth
   notificationServiceDataSource: DataSourceHealth
-  rasFollowServiceDataSource: DataSourceHealth
+  pubtechAdServerDataSource: DataSourceHealth
   rasVotingServiceDataSource: DataSourceHealth
   reviewsLambdaDataSource: DataSourceHealth
   reviewsServiceDataSource: DataSourceHealth
@@ -1063,6 +1139,12 @@ type Series implements Node {
   id: ID!
   title: String
   webUrl: String
+}
+
+type SeriesLink implements Link {
+  name: String!
+  ref: String
+  url: String!
 }
 
 type SeriesWorksConnection implements Connection {
