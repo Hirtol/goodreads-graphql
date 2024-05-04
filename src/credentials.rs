@@ -1,9 +1,7 @@
-use std::future::Future;
-use std::sync::{Arc, TryLockResult};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use futures::future::BoxFuture;
-use http::HeaderValue;
 use tokio::sync::RwLock;
 
 pub use cache::*;
@@ -88,7 +86,7 @@ impl CredentialsManager {
                             .await
                             .request_credentials()
                             .await?
-                            .ok_or(crate::GoodreadsError::FailedCredentials)
+                            .ok_or(crate::Error::FailedCredentials)
                     }
                 }
             }
@@ -174,7 +172,6 @@ pub mod cache {
 
     use futures::future::BoxFuture;
     use futures::FutureExt;
-    use hyper::body::HttpBody;
 
     use crate::credentials::Credentials;
 

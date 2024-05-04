@@ -1,29 +1,21 @@
-use crate::graphql::GraphQLCustomRequest;
-use crate::identity::GoodreadsCredentialsProvider;
-use crate::identity_cache::GoodreadsCredentialsCache;
-use crate::middleware::GoodreadsMiddleware;
-use crate::response_parser::{SerdeResponseError, SerdeResponseParser};
-use aws_credential_types::cache::{ProvideCachedCredentials, SharedCredentialsCache};
-use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_credential_types::Credentials;
-use aws_smithy_client::erase::DynConnector;
-use aws_smithy_http::body::SdkBody;
-use aws_smithy_http::result::SdkError;
-use aws_types::region::Region;
+use http::HeaderValue;
 use serde::de::DeserializeOwned;
-use std::sync::Arc;
 
-pub type Result<T> = std::result::Result<T, SdkError<SerdeResponseError>>;
+use crate::credentials::cache::MemoryCache;
+use crate::credentials::{CredentialsCache, CredentialsManager};
+use crate::graphql::GraphQLCustomRequest;
+
+pub const GRAPHQL_URL: &str = "https://kxbwmqov6jgg3daaamb744ycu4.appsync-api.us-east-1.amazonaws.com/graphql";
 
 pub struct GoodreadsClient {
-    aws_client: aws_smithy_client::Client<DynConnector, GoodreadsMiddleware>,
+    client: reqwest::Client,
     config: GoodreadsConfig,
 }
 
 pub struct GoodreadsConfig {
-    credentials_cache: SharedCredentialsCache,
-    cache: Arc<GoodreadsCredentialsCache>,
-    api_endpoint: http::Uri,
+    credentials: CredentialsManager,
+    api_endpoint: reqwest::Url,
+    region: String,
 }
 
 impl GoodreadsClient {
@@ -34,16 +26,6 @@ impl GoodreadsClient {
         ClientBuilder::new()
     }
 
-    /// Returns the [Credentials] used by this client (only if they were initialised, e.g. a request was sent).
-    ///
-    /// This can be useful for persisting credentials in situations like tests or during development.
-    /// The credentials usually last for an hour, and one can quickly get API banned if you request more credentials during this hour!
-    ///
-    /// The credentials can be given to the [ClientBuilder]. This client will automatically renew credentials when they expire during operation.
-    pub fn stored_credentials(&self) -> Option<Credentials> {
-        self.config.cache.stored_credentials()
-    }
-
     /// At the moment Goodreads has their introspection turned on, convenient for us as it allows us to cheaply
     /// dump the schema.
     ///
@@ -51,7 +33,7 @@ impl GoodreadsClient {
     ///
     /// The full Goodreads schema as a [Value](serde_json::Value).
     #[tracing::instrument(skip(self))]
-    pub async fn introspection(&self) -> Result<serde_json::Value> {
+    pub async fn introspection(&self) -> crate::Result<serde_json::Value> {
         let request = GraphQLCustomRequest::from_query(INTROSPECTION_QUERY, "IntrospectionQuery");
 
         self.send_graphql_query(request).await
@@ -67,11 +49,11 @@ impl GoodreadsClient {
     /// Note that this means this `T` should expect a top level `data` and/or `error` node, as GraphQL errors are not handled
     /// in this method.
     #[tracing::instrument(skip(self))]
-    pub async fn send_graphql_query<T>(&self, query: GraphQLCustomRequest<'_>) -> Result<T>
+    pub async fn send_graphql_query<T>(&self, query: GraphQLCustomRequest<'_>) -> crate::Result<T>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
-        let body = SdkBody::from(serde_json::to_string(&query).map_err(SdkError::construction_failure)?);
+        let body = serde_json::to_string(&query)?;
 
         self.send_body(body).await
     }
@@ -83,38 +65,56 @@ impl GoodreadsClient {
     /// The provided `T` if the request was successful (aka, endpoint returned 200).
     /// Note that this means this `T` should expect a top level `data` and/or `error` node, as GraphQL errors are not handled
     /// in this method.
-    #[tracing::instrument(skip(self, query))]
-    pub async fn send_body<T>(&self, query: SdkBody) -> Result<T>
+    #[tracing::instrument(skip(self, body))]
+    pub async fn send_body<T, B: AsRef<[u8]> + Into<reqwest::Body>>(&self, body: B) -> crate::Result<T>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
-        let request = http::Request::builder()
-            .uri(&self.config.api_endpoint)
-            .method(http::Method::POST)
-            .header(http::header::CONTENT_TYPE, "application/x-amz-json-1.1")
-            .body(query)
-            .map_err(SdkError::construction_failure)?;
+        let credentials = self.config.credentials.credentials().await?;
+        let now = chrono::Utc::now();
 
-        self.send_request(request).await
-    }
+        let mut headers = crate::static_headers!(
+            http::header::CONTENT_TYPE => "application/x-amz-json-1.1"
+        );
 
-    /// The lowest level method to send a request to the Goodreads API.
-    ///
-    /// Note that the caller is responsible for constructing the request properly.
-    /// For most use-cases [send_body](GoodreadsClient::send_body) is preferable.
-    #[tracing::instrument(skip(self))]
-    pub async fn send_request<T>(&self, request: http::Request<SdkBody>) -> Result<T>
-    where
-        T: DeserializeOwned + Send + Sync + 'static,
-    {
-        let mut final_request = aws_smithy_http::operation::Request::new(request);
-        final_request
-            .properties_mut()
-            .insert(self.config.credentials_cache.clone());
+        headers.insert(
+            "x-amz-security-token",
+            HeaderValue::from_str(&credentials.session_token).expect("Impossible"),
+        );
+        headers.insert(
+            "x-amz-date",
+            HeaderValue::from_str(&now.to_rfc3339()).expect("Impossible"),
+        );
+        headers.insert(
+            http::header::HOST,
+            HeaderValue::from_str(self.config.api_endpoint.host_str().expect("Need valid host in URL"))
+                .expect("Impossible"),
+        );
 
-        let op = aws_smithy_http::operation::Operation::new(final_request, SerdeResponseParser::default());
+        let sign = aws_sign_v4::AwsSign::new(
+            "POST",
+            self.config.api_endpoint.as_str(),
+            &now,
+            &headers,
+            &self.config.region,
+            &credentials.access_key_id,
+            &credentials.secret_key,
+            "appsync",
+            &body,
+        )
+        .sign();
 
-        self.aws_client.call(op).await
+        headers.insert(http::header::AUTHORIZATION, HeaderValue::from_str(&sign).unwrap());
+
+        Ok(self
+            .client
+            .post(self.config.api_endpoint.clone())
+            .headers(headers)
+            .body(body)
+            .send()
+            .await?
+            .json()
+            .await?)
     }
 }
 
@@ -126,54 +126,54 @@ impl Default for GoodreadsClient {
     }
 }
 
-#[derive(Default)]
-pub struct ClientBuilder {
-    region: Option<Region>,
+pub struct ClientBuilder<T: CredentialsCache = MemoryCache> {
+    client: Option<reqwest::Client>,
+    region: Option<String>,
     api_endpoint: Option<String>,
-    saved_credentials: Option<Credentials>,
+    identity_pool: Option<String>,
+    credentials_cache: Option<T>,
 }
 
-impl ClientBuilder {
-    pub fn new() -> ClientBuilder {
-        Self::default()
+impl<T: CredentialsCache + Send + Sync + 'static> ClientBuilder<T> {
+    pub fn new() -> ClientBuilder<T> {
+        Self {
+            client: None,
+            region: None,
+            api_endpoint: None,
+            identity_pool: None,
+            credentials_cache: None,
+        }
     }
 
-    pub fn build(self) -> Result<GoodreadsClient> {
-        let region = self.region.unwrap_or_else(|| Region::new("us-east-1"));
+    pub fn build(self) -> crate::Result<GoodreadsClient> {
+        let region = self.region.unwrap_or_else(|| "us-east-1".into());
 
-        let shared_provider = SharedCredentialsProvider::new(GoodreadsCredentialsProvider::new(region));
-
-        let caches = Arc::new(GoodreadsCredentialsCache::new(shared_provider, self.saved_credentials));
+        let cred_cache = self
+            .credentials_cache
+            .map(|cred| CredentialsManager::new(cred, self.identity_pool.clone()))
+            .unwrap_or_else(|| CredentialsManager::new(MemoryCache::new(None), self.identity_pool));
 
         let config = GoodreadsConfig {
-            credentials_cache: SharedCredentialsCache::from(caches.clone() as Arc<dyn ProvideCachedCredentials>),
-            cache: caches,
+            credentials: cred_cache,
             api_endpoint: self
                 .api_endpoint
-                .as_deref()
-                .unwrap_or("https://kxbwmqov6jgg3daaamb744ycu4.appsync-api.us-east-1.amazonaws.com/graphql")
-                .try_into()
-                .map_err(SdkError::construction_failure)?,
+                .and_then(|a| reqwest::Url::parse(&a).ok())
+                .unwrap_or_else(|| GRAPHQL_URL.try_into().unwrap()),
+            region,
         };
 
-        let client = aws_smithy_client::Builder::new()
-            .rustls_connector(Default::default())
-            .middleware(GoodreadsMiddleware::default())
-            .sleep_impl(aws_smithy_async::rt::sleep::default_async_sleep().expect("No sleep runtime available"))
-            .build();
-
         Ok(GoodreadsClient {
-            aws_client: client,
+            client: self.client.unwrap_or_default(),
             config,
         })
     }
 
-    pub fn region(mut self, region: impl Into<Option<Region>>) -> Self {
+    pub fn region(mut self, region: impl Into<Option<String>>) -> Self {
         self.set_region(region);
         self
     }
 
-    pub fn set_region(&mut self, region: impl Into<Option<Region>>) -> &mut Self {
+    pub fn set_region(&mut self, region: impl Into<Option<String>>) -> &mut Self {
         self.region = region.into();
         self
     }
@@ -188,13 +188,27 @@ impl ClientBuilder {
         self
     }
 
-    pub fn credentials(mut self, creds: Option<Credentials>) -> Self {
-        self.set_credentials(creds);
+    pub fn credentials_cache(mut self, cache: Option<T>) -> Self {
+        self.credentials_cache = cache;
+
         self
     }
 
-    pub fn set_credentials(&mut self, creds: Option<Credentials>) -> &mut Self {
-        self.saved_credentials = creds;
+    pub fn set_credentials_cache(&mut self, cache: Option<T>) -> &mut Self {
+        self.credentials_cache = cache;
+
+        self
+    }
+
+    pub fn client(mut self, cache: Option<reqwest::Client>) -> Self {
+        self.client = cache;
+
+        self
+    }
+
+    pub fn set_client(&mut self, cache: Option<reqwest::Client>) -> &mut Self {
+        self.client = cache;
+
         self
     }
 }

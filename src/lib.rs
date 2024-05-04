@@ -1,24 +1,13 @@
-pub mod client_2;
+pub mod client;
 pub mod credentials;
-
-// pub mod client;
 pub mod graphql;
-// pub mod identity;
-// pub mod identity_cache;
-// mod middleware;
-// pub mod response_parser;
-//
-// pub use aws_credential_types::Credentials;
-// pub use aws_smithy_http::body::SdkBody;
-// pub use aws_types::region::Region;
-// pub use client::*;
 
-pub use client_2::*;
+pub use client::*;
 
-pub type Result<T> = std::result::Result<T, GoodreadsError>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
-pub enum GoodreadsError {
+pub enum Error {
     #[error("Failed to refresh credentials")]
     FailedCredentials,
     #[error("Failed to build request")]
