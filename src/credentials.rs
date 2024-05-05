@@ -114,7 +114,7 @@ impl CredentialsManager {
             http::header::CONTENT_TYPE => "application/x-amz-json-1.1"
         );
 
-        let new_credentials = self
+        let new_credentials: CredentialsResponse = self
             .client
             .post(COGNITO_IDENT_URL)
             .headers(headers)
@@ -124,7 +124,7 @@ impl CredentialsManager {
             .json()
             .await?;
 
-        Ok(new_credentials)
+        Ok(new_credentials.credentials)
     }
 
     async fn fetch_identity_id(&self) -> crate::Result<Identity> {
