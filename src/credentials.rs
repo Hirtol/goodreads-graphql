@@ -44,7 +44,7 @@ pub struct CredentialsManager {
     client: reqwest::Client,
     cache: Box<RwLock<dyn CredentialsCache>>,
     identity_pool: String,
-    refresh_lock: std::sync::Mutex<()>,
+    refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl CredentialsManager {
@@ -53,7 +53,7 @@ impl CredentialsManager {
             identity_pool: identity_pool_id.unwrap_or_else(|| GOODREADS_IDENTITY_POOL.into()),
             client: reqwest::Client::new(),
             cache: Box::new(RwLock::new(credentials_cache)),
-            refresh_lock: std::sync::Mutex::new(()),
+            refresh_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -76,7 +76,7 @@ impl CredentialsManager {
                     Ok(_lock) => self.force_refresh().await,
                     Err(_) => {
                         // Wait for the refresh to occur above on a different task
-                        drop(self.refresh_lock.lock());
+                        drop(self.refresh_lock.lock().await);
                         // If the above failed, then we'll just error out here and let the caller take care of it.
                         self.cache
                             .read()
