@@ -42,16 +42,13 @@ pub struct Identity {
 
 pub struct CredentialsManager {
     client: reqwest::Client,
-    cache: Box<RwLock<dyn CredentialsCache + Send + Sync>>,
+    cache: Box<RwLock<dyn CredentialsCache>>,
     identity_pool: String,
     refresh_lock: std::sync::Mutex<()>,
 }
 
 impl CredentialsManager {
-    pub fn new(
-        credentials_cache: impl CredentialsCache + Send + Sync + 'static,
-        identity_pool_id: Option<String>,
-    ) -> Self {
+    pub fn new(credentials_cache: impl CredentialsCache, identity_pool_id: Option<String>) -> Self {
         Self {
             identity_pool: identity_pool_id.unwrap_or_else(|| GOODREADS_IDENTITY_POOL.into()),
             client: reqwest::Client::new(),
@@ -150,7 +147,7 @@ impl CredentialsManager {
     }
 }
 
-pub trait CredentialsCache {
+pub trait CredentialsCache: Send + Sync + 'static {
     /// Request the currently cached credentials, note that this will be called on each request,
     /// so it should be cheap to execute.
     ///

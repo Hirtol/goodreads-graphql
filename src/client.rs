@@ -22,7 +22,7 @@ impl GoodreadsClient {
     /// Create a new [GoodreadsClient].
     ///
     /// Use the [Default] implementation for sensible defaults.
-    pub fn builder() -> ClientBuilder {
+    pub fn builder<T: CredentialsCache>() -> ClientBuilder<T> {
         ClientBuilder::new()
     }
 
@@ -120,7 +120,7 @@ impl GoodreadsClient {
 
 impl Default for GoodreadsClient {
     fn default() -> Self {
-        Self::builder()
+        Self::builder::<MemoryCache>()
             .build()
             .expect("Default Goodreads config is no longer valid?")
     }
@@ -134,7 +134,7 @@ pub struct ClientBuilder<T: CredentialsCache = MemoryCache> {
     credentials_cache: Option<T>,
 }
 
-impl<T: CredentialsCache + Send + Sync + 'static> ClientBuilder<T> {
+impl<T: CredentialsCache> ClientBuilder<T> {
     /// Create a new [ClientBuilder]
     ///
     /// ```rust
