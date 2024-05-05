@@ -135,6 +135,18 @@ pub struct ClientBuilder<T: CredentialsCache = MemoryCache> {
 }
 
 impl<T: CredentialsCache + Send + Sync + 'static> ClientBuilder<T> {
+    /// Create a new [ClientBuilder]
+    ///
+    /// ```rust
+    /// # use goodreads_graphql::ClientBuilder;
+    /// # use goodreads_graphql::credentials::MemoryCache;
+    ///
+    /// let credential_cache = MemoryCache::new(None);
+    /// let client = ClientBuilder::new()
+    ///     .credentials_cache(Some(credential_cache))
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn new() -> ClientBuilder<T> {
         Self {
             client: None,
@@ -145,6 +157,9 @@ impl<T: CredentialsCache + Send + Sync + 'static> ClientBuilder<T> {
         }
     }
 
+    /// Build the final [GoodreadsClient].
+    ///
+    /// If no [CredentialsCache] was provided a default [MemoryCache] will be used instead.
     pub fn build(self) -> crate::Result<GoodreadsClient> {
         let region = self.region.unwrap_or_else(|| "us-east-1".into());
 

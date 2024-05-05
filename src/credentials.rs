@@ -154,7 +154,7 @@ pub trait CredentialsCache {
     /// Request the currently cached credentials, note that this will be called on each request,
     /// so it should be cheap to execute.
     ///
-    /// The client will check for expiration.
+    /// The caller must check for expiration.
     ///
     /// # Returns
     ///
@@ -180,6 +180,7 @@ pub mod cache {
     }
 
     impl MemoryCache {
+        /// Create a new ephemeral in-memory cache.
         pub fn new(credentials: Option<Arc<Credentials>>) -> Self {
             MemoryCache {
                 current_credentials: credentials,
@@ -207,6 +208,13 @@ pub mod cache {
     }
 
     impl JsonFileCache {
+        /// Initialise the cache from the given file.
+        ///
+        /// If the file doesn't exist the [Credentials] will be initialised as [None].
+        ///
+        /// # Errors
+        ///
+        /// If the contents of `file` are not valid JSON.
         pub fn from_file(file: impl Into<PathBuf>) -> crate::Result<Self> {
             let path = file.into();
             let credentials = if let Ok(contents) = std::fs::read(&path) {
@@ -215,17 +223,19 @@ pub mod cache {
                 None
             };
 
-            Self::from_credentials(path, credentials)
+            Ok(Self::from_credentials(path, credentials))
         }
 
-        pub fn from_credentials(
-            file: impl Into<PathBuf>,
-            credentials: Option<Arc<Credentials>>,
-        ) -> crate::Result<Self> {
-            Ok(Self {
+        /// Initialise the cache with the given set of `credentials` and a `file` path.
+        ///
+        /// Note that `file` is not opened, for loading [Credentials] from `file` see [Self::from_file].
+        ///
+        /// If [super::CredentialsCache::persist_credentials] is called the given `file` path will be used to save them immediately.
+        pub fn from_credentials(file: impl Into<PathBuf>, credentials: Option<Arc<Credentials>>) -> Self {
+            Self {
                 mem_cache: MemoryCache::new(credentials),
                 cache_path: file.into(),
-            })
+            }
         }
     }
 
