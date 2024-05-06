@@ -207,20 +207,20 @@ pub mod cache {
     impl JsonFileCache {
         /// Initialise the cache from the given file.
         ///
-        /// If the file doesn't exist the [Credentials] will be initialised as [None].
-        ///
-        /// # Errors
-        ///
-        /// If the contents of `file` are not valid JSON.
-        pub fn from_file(file: impl Into<PathBuf>) -> crate::Result<Self> {
+        /// If the file doesn't exist, or if there was some other problem, the [Credentials] will be initialised as [None].
+        pub fn from_file(file: impl Into<PathBuf>) -> Self {
             let path = file.into();
             let credentials = if let Ok(contents) = std::fs::read(&path) {
-                Some(Arc::new(serde_json::from_slice(&contents)?))
+                if let Ok(cert) = serde_json::from_slice(&contents) {
+                    Some(Arc::new(cert))
+                } else {
+                    None
+                }
             } else {
                 None
             };
 
-            Ok(Self::from_credentials(path, credentials))
+            Self::from_credentials(path, credentials)
         }
 
         /// Initialise the cache with the given set of `credentials` and a `file` path.

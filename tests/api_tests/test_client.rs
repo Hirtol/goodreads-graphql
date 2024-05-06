@@ -44,7 +44,7 @@ mod credentials {
     ///
     /// In this case we first check a filesystem cache, and only if that one is invalid request a new set of credentials.
     pub fn construct_global_credentials() -> Option<Arc<Credentials>> {
-        let cache = goodreads_graphql::credentials::cache::JsonFileCache::from_file(get_cred_path()).unwrap();
+        let cache = goodreads_graphql::credentials::cache::JsonFileCache::from_file(get_cred_path());
         let prov = goodreads_graphql::credentials::CredentialsManager::new(cache, None);
 
         println!("Querying Goodreads API for credentials...");
