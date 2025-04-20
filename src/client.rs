@@ -1,8 +1,6 @@
 use http::HeaderValue;
 use serde::de::DeserializeOwned;
 
-use crate::credentials::cache::MemoryCache;
-use crate::credentials::{CredentialsCache, CredentialsManager};
 use crate::graphql::GraphQLCustomRequest;
 
 pub const GRAPHQL_URL: &str = "https://kxbwmqov6jgg3daaamb744ycu4.appsync-api.us-east-1.amazonaws.com/graphql";
@@ -13,16 +11,14 @@ pub struct GoodreadsClient {
 }
 
 pub struct GoodreadsConfig {
-    credentials: CredentialsManager,
     api_endpoint: reqwest::Url,
-    region: String,
 }
 
 impl GoodreadsClient {
     /// Create a new [GoodreadsClient].
     ///
     /// Use the [Default] implementation for sensible defaults.
-    pub fn builder<T: CredentialsCache>() -> ClientBuilder<T> {
+    pub fn builder() -> ClientBuilder {
         ClientBuilder::new()
     }
 
@@ -70,41 +66,18 @@ impl GoodreadsClient {
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
-        let credentials = self.config.credentials.credentials().await?;
-        let now = chrono::Utc::now();
-
+        // This uses a hard-coded api-key for now, as it seems to have been the same for the last 6+ months.
+        // However, this might change and in that case we'll need to REGEX the javascript frontend for the apikey
         let mut headers = crate::static_headers!(
-            http::header::CONTENT_TYPE => "application/x-amz-json-1.1"
+            http::header::CONTENT_TYPE => "application/json",
+            "x-api-key" => "da2-xpgsdydkbregjhpr6ejzqdhuwy"
         );
 
-        headers.insert(
-            "x-amz-security-token",
-            HeaderValue::from_str(&credentials.session_token).expect("Impossible"),
-        );
-        headers.insert(
-            "x-amz-date",
-            HeaderValue::from_str(&now.to_rfc3339()).expect("Impossible"),
-        );
         headers.insert(
             http::header::HOST,
             HeaderValue::from_str(self.config.api_endpoint.host_str().expect("Need valid host in URL"))
                 .expect("Impossible"),
         );
-
-        let sign = aws_sign_v4::AwsSign::new(
-            "POST",
-            self.config.api_endpoint.as_str(),
-            &now,
-            &headers,
-            &self.config.region,
-            &credentials.access_key_id,
-            &credentials.secret_key,
-            "appsync",
-            &body,
-        )
-        .sign();
-
-        headers.insert(http::header::AUTHORIZATION, HeaderValue::from_str(&sign).unwrap());
 
         Ok(self
             .client
@@ -120,40 +93,35 @@ impl GoodreadsClient {
 
 impl Default for GoodreadsClient {
     fn default() -> Self {
-        Self::builder::<MemoryCache>()
+        Self::builder()
             .build()
             .expect("Default Goodreads config is no longer valid?")
     }
 }
 
-pub struct ClientBuilder<T: CredentialsCache = MemoryCache> {
+pub struct ClientBuilder {
     client: Option<reqwest::Client>,
-    region: Option<String>,
     api_endpoint: Option<String>,
-    identity_pool: Option<String>,
-    credentials_cache: Option<T>,
 }
 
-impl<T: CredentialsCache> ClientBuilder<T> {
+impl Default for ClientBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ClientBuilder {
     /// Create a new [ClientBuilder]
     ///
     /// ```rust
     /// # use goodreads_graphql::ClientBuilder;
-    /// # use goodreads_graphql::credentials::MemoryCache;
     ///
-    /// let credential_cache = MemoryCache::new(None);
-    /// let client = ClientBuilder::new()
-    ///     .credentials_cache(Some(credential_cache))
-    ///     .build()
-    ///     .unwrap();
+    /// let client = ClientBuilder::new().build().unwrap();
     /// ```
-    pub fn new() -> ClientBuilder<T> {
+    pub fn new() -> ClientBuilder {
         Self {
             client: None,
-            region: None,
             api_endpoint: None,
-            identity_pool: None,
-            credentials_cache: None,
         }
     }
 
@@ -161,36 +129,17 @@ impl<T: CredentialsCache> ClientBuilder<T> {
     ///
     /// If no [CredentialsCache] was provided a default [MemoryCache] will be used instead.
     pub fn build(self) -> crate::Result<GoodreadsClient> {
-        let region = self.region.unwrap_or_else(|| "us-east-1".into());
-
-        let cred_cache = self
-            .credentials_cache
-            .map(|cred| CredentialsManager::new(cred, self.identity_pool.clone()))
-            .unwrap_or_else(|| CredentialsManager::new(MemoryCache::new(None), self.identity_pool));
-
         let config = GoodreadsConfig {
-            credentials: cred_cache,
             api_endpoint: self
                 .api_endpoint
                 .and_then(|a| reqwest::Url::parse(&a).ok())
                 .unwrap_or_else(|| GRAPHQL_URL.try_into().unwrap()),
-            region,
         };
 
         Ok(GoodreadsClient {
             client: self.client.unwrap_or_default(),
             config,
         })
-    }
-
-    pub fn region(mut self, region: impl Into<Option<String>>) -> Self {
-        self.set_region(region);
-        self
-    }
-
-    pub fn set_region(&mut self, region: impl Into<Option<String>>) -> &mut Self {
-        self.region = region.into();
-        self
     }
 
     pub fn api_endpoint(mut self, url: impl Into<Option<String>>) -> Self {
@@ -200,18 +149,6 @@ impl<T: CredentialsCache> ClientBuilder<T> {
 
     pub fn set_api_endpoint(&mut self, url: impl Into<Option<String>>) -> &mut Self {
         self.api_endpoint = url.into();
-        self
-    }
-
-    pub fn credentials_cache(mut self, cache: Option<T>) -> Self {
-        self.credentials_cache = cache;
-
-        self
-    }
-
-    pub fn set_credentials_cache(&mut self, cache: Option<T>) -> &mut Self {
-        self.credentials_cache = cache;
-
         self
     }
 

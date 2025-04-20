@@ -1,5 +1,4 @@
 pub mod client;
-pub mod credentials;
 pub mod graphql;
 
 pub use client::*;

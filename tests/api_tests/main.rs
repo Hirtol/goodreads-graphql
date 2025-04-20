@@ -1,5 +1,6 @@
 use crate::test_client::TestClient;
 use goodreads_graphql::graphql::GraphQLCustomRequest;
+use std::path::PathBuf;
 
 mod test_client;
 
